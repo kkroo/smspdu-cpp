@@ -540,6 +540,7 @@ bool PDU::split()
     m_with_udh = false;
     m_udh_type = "";
     m_udh_data = "";
+    m_is_statusreport = false;
     
     if (m_pdu.length() < 2)
     {
@@ -583,7 +584,12 @@ bool PDU::split()
             return false;
     }
     else if (type == 2) // Status Report
-    {}
+    {
+        m_pdu_ptr += 2;
+        if(!splitStatusReport())
+            return false;
+        m_is_statusreport = true;
+    }
     else if (type == 1) // Sent message
     {}
     else
@@ -816,6 +822,230 @@ bool PDU::splitDeliver()
     m_udh_type = udh_type;
     m_udh_data = udh_data;
     
+    return true;
+}
+
+// Subroutine for messages type 2 (Status Report)
+// Input: 
+// Src_Pointer points to the PDU string
+// Output:
+// sendr Sender
+// date and time Date/Time-stamp
+// result is the status value and text translation
+bool PDU::splitStatusReport()
+{
+    const char *message_id_label = "Message_id:"; // Fixed title inside the status report body.
+    const char *status_label = "Status:"; // Fixed title inside the status report body.
+
+    char result[1024];
+    result[0] = 0;
+    strcat(result, "SMS STATUS REPORT\n");
+
+    // There should be at least message-id, address-length and address-type:
+    if (strlen(m_pdu_ptr) < 6)
+    {
+        m_err_msg = "Reading message id, address length and address type: PDU is too short";
+        return false;
+    }
+
+    int messageid;
+    if ((messageid = octet2bin_check(m_pdu_ptr)) < 0)
+    {
+        m_err_msg = "Invalid message id";
+        return false;
+    }
+    sprintf(strchr(result, 0), "%s %i\n", message_id_label, messageid);
+    
+    // Get recipient address
+    m_pdu_ptr += 2;
+    int length = octet2bin_check(m_pdu_ptr);
+    if (length < 1 || length > max_addr_len)
+    {
+        m_err_msg = "Invalid recipient address length";
+        return false;
+    }
+    
+    int padding = length % 2;
+    m_pdu_ptr += 2;
+    
+    int addr_type = explainAddressType(m_pdu_ptr, 0);
+    if (addr_type < 0)
+    {
+        m_err_msg = "Invalid recipient address type";
+        return false;
+    }
+    if (addr_type < 0x80)
+    {
+        m_err_msg = "Missing bit 7 in recipient address type";
+        return false;
+    }
+    
+    char tmpsender[100];
+    char sendr[100];
+    m_pdu_ptr += 2;
+    if ((addr_type & 112) == 80) // Sender is alphanumeric
+    {  
+        if (strlen(m_pdu_ptr) < (size_t)(length + padding))
+        {
+            m_err_msg = "While trying to read recipient address (alphanumeric)";
+            return false;
+        }
+        
+        snprintf(tmpsender, length + padding + 3, "%02X%s", length * 4 / 7, m_pdu_ptr);
+        if (pdu2text0(tmpsender, sendr) < 0)
+        {
+            m_err_msg = "Reading alphanumeric recipient address: Invalid character(s)";
+            return false;
+        }
+        m_sender = sendr;
+    }
+    else // Sender is numeric
+    { 
+        if (strlen(m_pdu_ptr) < (size_t)(length + padding))
+        {
+            m_err_msg = "Reading recipient address (numeric): PDU is too short";
+            return false;
+        }
+        
+        strncpy(sendr, m_pdu_ptr, length + padding);
+        sendr[length + padding] = 0;
+        m_sender = sendr;
+        swapchars(m_sender);
+        
+        int end = length + padding -1;
+        if (padding)
+        {
+            if (m_sender[end] != 'F')
+                cout << "Length of numeric recipient address is odd, but not terminated with 'F'." << endl;
+            else
+                m_sender.resize(end);
+        }
+        else
+        {
+            if (m_sender[end] == 'F')
+            {
+                cout << "Length of numeric recipient address is even, but still was terminated with 'F'." << endl;
+                m_sender.resize(end);
+            }
+        }
+        for (size_t i = 0; i < m_sender.length(); i++)
+            if (!isdigit(m_sender[i]))
+            {
+                // Not a fatal error (?)
+                //pdu_error(err_str, 0, Src_Pointer -full_pdu, Length +padding, "Invalid character(s) in recipient address: \"%s\"", sendr);
+                // *sendr = 0;
+                cout << "Invalid character(s) in recipient address." << endl;
+                break;
+            }
+    }
+    
+    m_pdu_ptr += length + padding;
+    if (strlen(m_pdu_ptr) < 14)
+    {
+        m_err_msg = "While trying to read SMSC Timestamp: PDU is too short";
+        return false;
+    }
+ /*           else
+            {
+              // get SMSC timestamp
+              sprintf(date,"%c%c-%c%c-%c%c",Src_Pointer[1],Src_Pointer[0],Src_Pointer[3],Src_Pointer[2],Src_Pointer[5],Src_Pointer[4]);
+              if (!isdigitc(date[0]) || !isdigitc(date[1]) || !isdigitc(date[3]) || !isdigitc(date[4]) || !isdigitc(date[6]) || !isdigitc(date[7]))
+              {
+                pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid character(s) in date of SMSC Timestamp: \"%s\"", date);
+                *date = 0;
+              }
+              else if (atoi(date +3) > 12 || atoi(date +6) > 31)
+              {
+                // Not a fatal error (?)
+                //pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid value(s) in date of SMSC Timestamp: \"%s\"", date);
+                // *date = 0;
+                add_warning(warning_headers, "Invalid value(s) in date of SMSC Timestamp.");
+              }
+
+              Src_Pointer += 6;
+              sprintf(time,"%c%c:%c%c:%c%c",Src_Pointer[1],Src_Pointer[0],Src_Pointer[3],Src_Pointer[2],Src_Pointer[5],Src_Pointer[4]);
+              if (!isdigitc(time[0]) || !isdigitc(time[1]) || !isdigitc(time[3]) || !isdigitc(time[4]) || !isdigitc(time[6]) || !isdigitc(time[7]))
+              {
+                pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid character(s) in time of SMSC Timestamp: \"%s\"", time);
+                *time = 0;
+              }
+              else if (atoi(time) > 23 || atoi(time +3) > 59 || atoi(time +6) > 59)
+              {
+                // Not a fatal error (?)
+                //pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid value(s) in time of SMSC Timestamp: \"%s\"", time);
+                // *time = 0;
+                add_warning(warning_headers, "Invalid value(s) in time of SMSC Timestamp.");
+              }
+
+              if (!(*err_str))
+              {
+                Src_Pointer += 6;
+                // Time zone is not used but bytes are checked:
+                if (octet2bin_check(Src_Pointer) < 0)
+                  pdu_error(err_str, 0, Src_Pointer -full_pdu, 2,
+                            "Invalid character(s) in Time Zone of SMSC Time Stamp: \"%.2s\"", Src_Pointer);
+                else
+                  Src_Pointer += 2;
+              }
+            }
+          }
+
+          if (!(*err_str))
+          {
+            if (strlen(Src_Pointer) < 14)
+              pdu_error(err_str, 0, Src_Pointer -full_pdu, 14, "While trying to read Discharge Timestamp: %s", err_too_short);
+            else
+            {
+              // get Discharge timestamp
+              sprintf(temp,"%c%c-%c%c-%c%c %c%c:%c%c:%c%c",Src_Pointer[1],Src_Pointer[0],Src_Pointer[3],Src_Pointer[2],Src_Pointer[5],Src_Pointer[4],Src_Pointer[7],Src_Pointer[6],Src_Pointer[9],Src_Pointer[8],Src_Pointer[11],Src_Pointer[10]);
+              if (!isdigitc(temp[0]) || !isdigitc(temp[1]) || !isdigitc(temp[3]) || !isdigitc(temp[4]) || !isdigitc(temp[6]) || !isdigitc(temp[7]) || 
+                  !isdigitc(temp[9]) || !isdigitc(temp[10]) || !isdigitc(temp[12]) || !isdigitc(temp[13]) || !isdigitc(temp[15]) || !isdigitc(temp[16]))
+                pdu_error(err_str, 0, Src_Pointer -full_pdu, 12, "Invalid character(s) in Discharge Timestamp: \"%s\"", temp);
+              else if (atoi(temp +3) > 12 || atoi(temp +6) > 31 || atoi(temp +9) > 24 || atoi(temp +12) > 59 || atoi(temp +16) > 59)
+              {
+                // Not a fatal error (?)
+                //pdu_error(err_str, 0, Src_Pointer -full_pdu, 12, "Invalid value(s) in Discharge Timestamp: \"%s\"", temp);
+                add_warning(warning_headers, "Invalid values(s) in Discharge Timestamp.");
+              }
+
+              if (!(*err_str))
+              {
+                Src_Pointer += 12;
+                // Time zone is not used but bytes are checked:
+                if (octet2bin_check(Src_Pointer) < 0)
+                  pdu_error(err_str, 0, Src_Pointer -full_pdu, 2,
+                            "Invalid character(s) in Time Zone of Discharge Time Stamp: \"%.2s\"", Src_Pointer);
+                else
+                  Src_Pointer += 2;
+              }
+            }
+
+            if (!(*err_str))
+            {
+              sprintf(strchr(result, 0), "Discharge_timestamp: %s", temp);
+              if (strlen(Src_Pointer) < 2)
+                pdu_error(err_str, 0, Src_Pointer -full_pdu, 2, "While trying to read Status octet: %s", err_too_short);
+              else
+              {
+                // get Status
+                if ((status = octet2bin_check(Src_Pointer)) < 0)
+                  pdu_error(err_str, 0, Src_Pointer -full_pdu, 2, "Invalid Status octet: \"%.2s\"", Src_Pointer);
+                else
+                {
+                  char buffer[128];
+
+                  explain_status(buffer, sizeof(buffer), status);
+                  sprintf(strchr(result, 0), "\n%s %i,%s", SR_Status, status, buffer);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  return strlen(result);*/
     return true;
 }
 

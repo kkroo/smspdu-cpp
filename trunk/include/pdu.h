@@ -56,6 +56,7 @@ public:
     // Staff
     bool readSMSC();
     bool splitDeliver();
+    bool splitStatusReport();
     bool split();
     int explainAddressType(const char *octet_char, int octet_int);
     
@@ -79,6 +80,8 @@ private:
     bool m_with_udh;
     string m_udh_type;
     string m_udh_data;
+    
+    bool m_is_statusreport;
     
 };
 
