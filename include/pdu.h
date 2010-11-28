@@ -38,6 +38,7 @@ public:
     };
     
     // Constructors/Destructors
+    PDU() { m_flash = false; m_report = false; m_with_udh = false; }
     PDU(const string& pdu);
     virtual ~PDU() {}
     
@@ -52,6 +53,15 @@ public:
     inline string getTime() { return m_time; }
     inline string getUDHType() { return m_udh_type; }
     inline string getUDHData() { return m_udh_data; }
+    inline int getAlphabet() { return m_alphabet; }
+    inline string getAddress() { return m_address; }
+    
+    // Setters
+    inline void setPDU(const string pdu) { m_pdu = pdu; }
+    inline void setAddress(const string addr) { m_address = addr; }
+    inline void setText(const string text) { m_text = text; }
+    inline void setSMSC(const string smsc) { m_smsc = smsc; }
+    inline void setAlphabet(const int alpha) { m_alphabet = alpha; }
     
     // Staff
     bool readSMSC();
@@ -59,6 +69,8 @@ public:
     bool splitStatusReport();
     bool split();
     int explainAddressType(const char *octet_char, int octet_int);
+    
+    void makePDU(string mode, int validity, int replace_msg, int system_msg);
     
 
 private:
@@ -76,12 +88,15 @@ private:
     Mode m_mode;
     int m_replace;  //TODO: remove it?
     bool m_flash;
+    bool m_report;
     
     bool m_with_udh;
     string m_udh_type;
     string m_udh_data;
     
-    bool m_is_statusreport;    
+    bool m_is_statusreport;  
+    
+    string m_address;  
 };
 
 #endif

@@ -40,30 +40,82 @@ size_t convert(const char *to_enc, const char *from_enc, char *in_str,
 
 int main()
 {
-    //PDU pdu("0791839001446010040C9183904517829100000111726115318005C8329BFD06"); // Hello
-    PDU pdu("0791839001446010040C918390314598910008011182417025800C041F04400438043204350442"); // Привет(ru_RU.UTF-8)
+    PDU pdu("0791839001446010040C9183904517829100000111726115318005C8329BFD06");
+    cout << "Reading GSM:" << endl;
     cout << "PDU: "<< pdu.getPDU() << endl;
     
     if (!pdu.split())
-        cout << "Split error: " << pdu.getLastError() << endl;
-    else
     {
-        cout << "PDU SMSC: " << pdu.getSMSC() << endl;
-        cout << "PDU Sender Address Type: " << pdu.getSenderAddressType() << endl;
-        cout << "PDU Sender: " << pdu.getSender() << endl;
-        cout << "PDU Date: " << pdu.getDate() << endl;
-        cout << "PDU Time: " << pdu.getTime() << endl;
-        
+        cout << "Split error: " << pdu.getLastError() << endl;
+        return -1;
+    }
+    
+    cout << "PDU SMSC: " << pdu.getSMSC() << endl;
+    cout << "PDU Sender Address Type: " << pdu.getSenderAddressType() << endl;
+    cout << "PDU Sender: " << pdu.getSender() << endl;
+    cout << "PDU Date: " << pdu.getDate() << endl;
+    cout << "PDU Time: " << pdu.getTime() << endl;
+    cout << "PDU UDH Type: " << pdu.getUDHType() << endl;
+    cout << "PDU UDH Data: " << pdu.getUDHData() << endl;
+    
+    if (pdu.getAlphabet() == 2)
+    {
         char in_str[512], out_str[512];
         strcpy(in_str, pdu.getText().c_str());
         if (convert("utf8", "UTF16BE", in_str, out_str, 512) >= 0)
             cout << "PDU Message: " << out_str << endl;
         else
             cout << "PDU Message: " << pdu.getText() << endl;
-        
-        cout << "PDU UDH Type: " << pdu.getUDHType() << endl;
-        cout << "PDU UDH Data: " << pdu.getUDHData() << endl;
     }
+    else
+        cout << "PDU Message: " << pdu.getText() << endl; 
+       
+    pdu.setPDU("0791839001446010040C918390314598910008011182417025800C041F04400438043204350442");
+    cout << endl << "Reading UCS2:" << endl;
+    cout << "PDU: "<< pdu.getPDU() << endl;
+    
+    if (!pdu.split())
+    {
+        cout << "Split error: " << pdu.getLastError() << endl;
+        return -1;
+    }
+    
+    cout << "PDU SMSC: " << pdu.getSMSC() << endl;
+    cout << "PDU Sender Address Type: " << pdu.getSenderAddressType() << endl;
+    cout << "PDU Sender: " << pdu.getSender() << endl;
+    cout << "PDU Date: " << pdu.getDate() << endl;
+    cout << "PDU Time: " << pdu.getTime() << endl;
+    cout << "PDU UDH Type: " << pdu.getUDHType() << endl;
+    cout << "PDU UDH Data: " << pdu.getUDHData() << endl;
+    
+    if (pdu.getAlphabet() == 2)
+    {
+        char in_str[512], out_str[512];
+        strcpy(in_str, pdu.getText().c_str());
+        if (convert("utf8", "UTF16BE", in_str, out_str, 512) >= 0)
+            cout << "PDU Message: " << out_str << endl;
+        else
+            cout << "PDU Message: " << pdu.getText() << endl;
+    }
+    else
+        cout << "PDU Message: " << pdu.getText() << endl;
+   
+        
+    // From http://www.twit88.com/home/utility/sms-pdu-encode-decode
+    //"AT+CMGS=26\n079183900144601011000C918390113254760000AA0DC8329BFD6681EE6F399B1C02"     
+    PDU pdu2;
+    pdu2.setAddress("380911234567");
+    pdu2.setText("Hello, world!");
+    pdu2.setSMSC("+380910440601");
+    pdu2.setAlphabet(-1);
+    
+    cout << endl << "Writing GSM:" << endl;
+    pdu2.makePDU("new", 32, 0, 0);
+    cout << "PDU SMSC: " << pdu2.getSMSC() << endl;
+    cout << "PDU Address: " << pdu2.getAddress() << endl;
+    cout << "PDU Message: " << pdu2.getText() << endl;
+    cout << "Generated PDU: [" << pdu2.getPDU() << "]"<< endl;
+    cout << "Correct PDU:   [079183900144601011000C918390113254760000AA0DC8329BFD6681EE6F399B1C02]" << endl;
 
     return 0;
 }
