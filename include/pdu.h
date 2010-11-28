@@ -25,12 +25,12 @@ public:
         NF_NATIONAL = 161
     };
     
-    enum Alphabet {
+    /*enum Alphabet {
         GSM = -1,
         ISO = 0,
         BINARY = 1,
         UCS2 = 2
-    };
+    };*/
     
     enum Mode {
         OLD,
@@ -48,6 +48,8 @@ public:
     inline string getSMSC() { return m_smsc; }
     inline string getLastError() { return m_err_msg; }
     inline string getSenderAddressType() { return m_sender_addr_type; }
+    inline string getDate() { return m_date; }
+    inline string getTime() { return m_time; }
     
     // Staff
     bool readSMSC();
@@ -66,9 +68,11 @@ private:
     string m_text;
     string m_date;
     string m_time;
-    Alphabet m_alphabet;
+    int m_alphabet;
     string m_smsc; 
     Mode m_mode;
+    int m_replace;  //TODO: remove it?
+    bool m_flash;
     
 };
 

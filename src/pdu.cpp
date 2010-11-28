@@ -14,6 +14,7 @@ Either version 2 of the License, or (at your option) any later version.
 #include <string.h>
 #include <iostream>
 #include <stdio.h>
+#include <stdlib.h>
 
 using namespace std;
 
@@ -314,7 +315,8 @@ bool PDU::split()
     m_time = "";
     m_text = "";
     m_smsc = ""; 
-    m_alphabet = ISO;
+    m_alphabet = 0;
+    m_flash = false;
     
     if (m_pdu.length() < 2)
     {
@@ -378,6 +380,7 @@ bool PDU::splitDeliver()
         return false;
     }
     
+    int padding = 0;
     int length = octet2bin_check(m_pdu_ptr);
     if (length < 0 || length > max_addr_len)
     {
@@ -388,7 +391,7 @@ bool PDU::splitDeliver()
         m_pdu_ptr += 4;
     else
     {
-        int padding = length % 2;
+        padding = length % 2;
         m_pdu_ptr += 2;
         int addr_type = explainAddressType(m_pdu_ptr, 0);
         if (addr_type < 0)
@@ -453,7 +456,88 @@ bool PDU::splitDeliver()
         }
     }
     
-    // pdu.c:1129
+    m_pdu_ptr += length + padding;
+    // Next there should be:
+    // XX protocol identifier
+    // XX data encoding scheme
+    // XXXXXXXXXXXXXX time stamp, 7 octets
+    // XX length of user data
+    // ( XX... user data  )
+    if (strlen(m_pdu_ptr) < 20)
+    {
+        m_err_msg = "Reading TP-PID, TP-DSC, TP-SCTS and TP-UDL: PDU is too short";
+        return false;
+    }
+    // PID
+    int byte_buf;
+    if ((byte_buf = octet2bin_check(m_pdu_ptr)) < 0)
+    {
+        m_err_msg = "Invalid protocol identifier";
+        return false;
+    }
+    if ((byte_buf & 0xF8) == 0x40)
+        m_replace = (byte_buf & 0x07);
+    
+    // Alphabet
+    m_pdu_ptr += 2;
+    if ((byte_buf = octet2bin_check(m_pdu_ptr)) < 0)
+    {
+        m_err_msg = "Invalid data encoding scheme";
+        return false;
+    }
+    m_alphabet = (byte_buf & 0x0C) >> 2;
+    if (m_alphabet == 3)
+    {
+        // TODO: or should this be a warning? If so, GSM alphabet is then used as a default.
+        m_err_msg = "Invalid alphabet in data encoding scheme: value 3 is not supported";
+        return false;
+    }
+    if (m_alphabet == 0)
+        m_alphabet = -1;
+    
+    // 3.1: Check if this message was a flash message:
+    if (byte_buf & 0x10)
+        if (!(byte_buf & 0x01))
+            m_flash = true;
+    
+    // Date
+    m_pdu_ptr += 2;
+    char str_buf[100]; // TODO: replace it to strings?
+    sprintf(str_buf, "%c%c-%c%c-%c%c", m_pdu_ptr[1], m_pdu_ptr[0], m_pdu_ptr[3],
+            m_pdu_ptr[2], m_pdu_ptr[5], m_pdu_ptr[4]);
+    if (!isdigit(str_buf[0]) || !isdigit(str_buf[1]) || !isdigit(str_buf[3]) 
+        || !isdigit(str_buf[4]) || !isdigit(str_buf[6]) || !isdigit(str_buf[7]))
+    {
+        m_err_msg = "Invalid character(s) in date of Service Centre Time Stamp";
+        return false;
+    }
+    else if (atoi(str_buf + 3) > 12 || atoi(str_buf + 6) > 31)
+    {
+        // Not a fatal error (?)
+        //pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid value(s) in date of Service Centre Time Stamp: \"%s\"", date);
+        // *date = 0;
+        cout << "Invalid values(s) in date of Service Centre Time Stamp.";
+    }
+    m_date = str_buf;
+    
+    // Time
+    m_pdu_ptr += 6;
+    sprintf(str_buf, "%c%c:%c%c:%c%c", m_pdu_ptr[1], m_pdu_ptr[0], m_pdu_ptr[3],
+            m_pdu_ptr[2], m_pdu_ptr[5], m_pdu_ptr[4]);
+    if (!isdigit(str_buf[0]) || !isdigit(str_buf[1]) || !isdigit(str_buf[3]) 
+        || !isdigit(str_buf[4]) || !isdigit(str_buf[6]) || !isdigit(str_buf[7]))
+    {
+        m_err_msg = "Invalid character(s) in time of Service Centre Time Stamp";
+        return false;
+    }
+    else if (atoi(str_buf) > 23 || atoi(str_buf + 3) > 59 || atoi(str_buf + 6) > 59)
+    {
+        // Not a fatal error (?)
+        //pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid value(s) in time of Service Centre Time Stamp: \"%s\"", time);
+        // *time = 0;
+        cout << "Invalid values(s) in time of Service Centre Time Stamp.";
+    }
+    m_time = str_buf;
     
     return true;
 }
