@@ -23,6 +23,8 @@ using namespace std;
 const int max_smsc_addr_len = 30;
 const int max_addr_len = 50;
 const int size_udh_data = 500;
+const int maxtext = 39016;
+const int size_udh_type = 4096;
 
 // Helper methods
 
@@ -68,7 +70,128 @@ void swapchars(string& str)
     }
 }
 
-int pdu2text(char *pdu, char *text, int *text_length, int *expected_length,
+// TODO: remove it!
+char *strcpyo(char *dest, const char *src)
+{
+    size_t i;
+
+    for (i = 0; src[i] != '\0'; i++)
+        dest[i] = src[i];
+
+    dest[i] = '\0';
+
+    return dest;
+}
+// Returns a length of udh (including UDHL), -1 if error.
+// pdu is 0-terminated ascii(hex) pdu string with
+// or without spaces.
+int explain_udh(char *udh_type, const char *pdu)
+{
+    int udh_length;
+    int idx;
+    char *pdu_ptr;
+    char *p;
+    const char *p1;
+    int i;
+    char tmp[512];
+    char buffer[1024];
+
+    *udh_type = 0;
+    if (strlen(pdu) >= sizeof(buffer))
+        return -1;
+    strcpy(buffer, pdu);
+    while ((p = strchr(buffer, ' ')))
+        strcpyo(p, p +1);
+    
+    if ((udh_length = octet2bin_check(buffer)) < 0)
+        return -1;
+    udh_length++;
+    if ((size_t)(udh_length *2) > strlen(buffer))
+        return -1;
+    sprintf(udh_type, "Length=%i", udh_length);
+    idx = 1;
+    while (idx < udh_length)
+    {
+        pdu_ptr = buffer + idx * 2;
+        p = NULL;
+        i = octet2bin_check(pdu_ptr);
+        switch (i)
+        {
+        case -1: return -1;
+
+        // 3GPP TS 23.040 version 6.8.1 Release 6 - ETSI TS 123 040 V6.8.1 (2006-10)
+        case 0x00: p1 = "Concatenated short messages, 8-bit reference number"; break;
+        case 0x01: p1 = "Special SMS Message Indication"; break;
+        case 0x02: p1 = "Reserved"; break;
+        //case 0x03: p = "Value not used to avoid misinterpretation as <LF> character"; break;
+        case 0x04: p1 = "Application port addressing scheme, 8 bit address"; break;
+        case 0x05: p1 = "Application port addressing scheme, 16 bit address"; break;
+        case 0x06: p1 = "SMSC Control Parameters"; break;
+        case 0x07: p1 = "UDH Source Indicator"; break;
+        case 0x08: p1 = "Concatenated short message, 16-bit reference number"; break;
+        case 0x09: p1 = "Wireless Control Message Protocol"; break;
+        case 0x0A: p1 = "Text Formatting"; break;
+        case 0x0B: p1 = "Predefined Sound"; break;
+        case 0x0C: p1 = "User Defined Sound (iMelody max 128 bytes)"; break;
+        case 0x0D: p1 = "Predefined Animation"; break;
+        case 0x0E: p1 = "Large Animation (16*16 times 4 = 32*4 =128 bytes)"; break;
+        case 0x0F: p1 = "Small Animation (8*8 times 4 = 8*4 =32 bytes)"; break;
+        case 0x10: p1 = "Large Picture (32*32 = 128 bytes)"; break;
+        case 0x11: p1 = "Small Picture (16*16 = 32 bytes)"; break;
+        case 0x12: p1 = "Variable Picture"; break;
+        case 0x13: p1 = "User prompt indicator"; break;
+        case 0x14: p1 = "Extended Object"; break;
+        case 0x15: p1 = "Reused Extended Object"; break;
+        case 0x16: p1 = "Compression Control"; break;
+        case 0x17: p1 = "Object Distribution Indicator"; break;
+        case 0x18: p1 = "Standard WVG object"; break;
+        case 0x19: p1 = "Character Size WVG object"; break;
+        case 0x1A: p1 = "Extended Object Data Request Command"; break;
+        case 0x20: p1 = "RFC 822 E-Mail Header"; break;
+        case 0x21: p1 = "Hyperlink format element"; break;
+        case 0x22: p1 = "Reply Address Element"; break;
+        case 0x23: p1 = "Enhanced Voice Mail Information"; break;
+        }
+
+        if (!p1)
+        {
+            if (i >= 0x1B && i <= 0x1F)
+                p1 = "Reserved for future EMS features";
+            else if (i >= 0x24 && i <= 0x6F)
+                p1 = "Reserved for future use";
+            else if (i >= 0x70 && i <= 0x7F)
+                p1 = "(U)SIM Toolkit Security Headers";
+            else if (i >= 0x80 && i <= 0x9F)
+                p1 = "SME to SME specific use";
+            else if (i >= 0xA0 && i <= 0xBF)
+                p1 = "Reserved for future use";
+            else if (i >= 0xC0 && i <= 0xDF)
+                p1 = "SC specific use";
+            else if (i >= 0xE0 && i <= 0xFF)
+                p1 = "Reserved for future use";
+        }
+    
+        if (!p1)
+            p1 = "unknown";
+        sprintf(tmp, ", [%.2s]%s", pdu_ptr, p1);
+        if (strlen(udh_type) + strlen(tmp) >= (size_t)size_udh_type)
+            return -1;
+        sprintf(strchr(udh_type, 0), "%s", tmp);
+
+        // Next octet is length of data:
+        if ((i = octet2bin_check(pdu_ptr + 2)) < 0)
+            return -1;
+        if ((size_t)(i *2) > strlen(pdu_ptr + 4))
+            return -1;
+        idx += i + 2;
+        if (idx > udh_length)
+            return -1; // Incorrect UDL or length of Information Element.
+    }
+
+    return udh_length;
+}
+
+int pdu2text(const char *pdu, char *text, int *text_length, int *expected_length,
              int with_udh, char *udh, char *udh_type, int *errorpos) 
 {
     int bitposition;
@@ -146,11 +269,10 @@ int pdu2text(char *pdu, char *text, int *text_length, int *expected_length,
             return result;
         }
 
-        /*TODO
         if (udh_type)
-        if (explain_udh(udh_type, pdu +2) < 0)
-            if (strlen(udh_type) +7 < SIZE_UDH_TYPE)
-                sprintf(strchr(udh_type, 0), "%sERROR", (*udh_type)? ", " : "");*/
+            if (explain_udh(udh_type, pdu + 2) < 0)
+                if (strlen(udh_type) + 7 < (size_t)size_udh_type)
+                    sprintf(strchr(udh_type, 0), "%sERROR", (*udh_type)? ", " : "");
 
         // Calculate how many text charcters include the UDH.
         // After the UDH there may follow filling bits to reach a 7bit boundary.
@@ -317,6 +439,9 @@ bool PDU::split()
     m_smsc = ""; 
     m_alphabet = 0;
     m_flash = false;
+    m_with_udh = false;
+    m_udh_type = "";
+    m_udh_data = "";
     
     if (m_pdu.length() < 2)
     {
@@ -343,13 +468,13 @@ bool PDU::split()
     }
     
     // Unused bits 3 and 4 should be zero, failure with this produces a warning:
-/*    if (tmp & 0x18)
+    if (tmp & 0x18)
         cout << "Unused bits 3 and 4 are used in the first octet of the SMS-DELIVER PDU." << endl;
     
     if (tmp & 0x40) // Is UDH bit set?
-        with_udh = true;
+        m_with_udh = true;
     
-    if (tmp & 0x20) // Is status report going to be returned to the SME?
+    /*if (tmp & 0x20) // Is status report going to be returned to the SME?
         report = true;*/
     
     int type = tmp & 3;
@@ -538,6 +663,37 @@ bool PDU::splitDeliver()
         cout << "Invalid values(s) in time of Service Centre Time Stamp.";
     }
     m_time = str_buf;
+    
+    m_pdu_ptr += 6;
+    // Time zone is not used but bytes are checked:
+    if (octet2bin_check(m_pdu_ptr) < 0)
+    {
+        m_err_msg = "Invalid character(s) in Time Zone of Service Centre Time Stamp";
+        return false;
+    }
+    
+    m_pdu_ptr += 2;
+    
+    if (m_alphabet <= 0)
+    {
+        int result = 0;
+        char message[maxtext];
+        int message_length;
+        int expected_length;
+        char udh_data[size_udh_data]; udh_data[0] = 0;
+        char udh_type[size_udh_type]; udh_type[0] = 0;
+        int errorpos = 0;
+        if ((result = pdu2text(m_pdu_ptr, message, &message_length, 
+                               &expected_length, (int)m_with_udh, udh_data, 
+                               udh_type, &errorpos)) < 0)
+        {
+            m_err_msg = "Error while reading TP-UD (GSM text)";
+            return false;
+        }
+        m_text = message;
+        m_udh_type = udh_type;
+        m_udh_data = udh_data;
+    }
     
     return true;
 }

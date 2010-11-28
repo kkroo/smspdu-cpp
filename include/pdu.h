@@ -50,6 +50,8 @@ public:
     inline string getSenderAddressType() { return m_sender_addr_type; }
     inline string getDate() { return m_date; }
     inline string getTime() { return m_time; }
+    inline string getUDHType() { return m_udh_type; }
+    inline string getUDHData() { return m_udh_data; }
     
     // Staff
     bool readSMSC();
@@ -73,6 +75,10 @@ private:
     Mode m_mode;
     int m_replace;  //TODO: remove it?
     bool m_flash;
+    
+    bool m_with_udh;
+    string m_udh_type;
+    string m_udh_data;
     
 };
 

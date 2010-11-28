@@ -18,6 +18,9 @@ int main()
         cout << "PDU Sender: " << pdu.getSender() << endl;
         cout << "PDU Date: " << pdu.getDate() << endl;
         cout << "PDU Time: " << pdu.getTime() << endl;
+        cout << "PDU Message: " << pdu.getText() << endl;
+        cout << "PDU UDH Type: " << pdu.getUDHType() << endl;
+        cout << "PDU UDH Data: " << pdu.getUDHData() << endl;
     }
 
     return 0;
