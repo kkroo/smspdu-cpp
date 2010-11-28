@@ -81,8 +81,7 @@ private:
     string m_udh_type;
     string m_udh_data;
     
-    bool m_is_statusreport;
-    
+    bool m_is_statusreport;    
 };
 
 #endif
