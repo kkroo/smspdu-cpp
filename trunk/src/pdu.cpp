@@ -25,6 +25,12 @@ const int max_addr_len = 50;
 const int size_udh_data = 500;
 const int maxtext = 39016;
 const int size_udh_type = 4096;
+const int maxsms_pdu = 160;
+const int maxsms_ucs2 = 140;
+const int maxsms_binary = 140;
+const int size_smsc = 100;
+const int validity_period = 32;
+const int size_to = 100;
 
 // Helper methods
 
@@ -67,6 +73,22 @@ void swapchars(string& str)
         char c = str[i];
         str[i] = str[i + 1];
         str[i + 1] = c;
+    }
+}
+
+/* Swap every second character */
+void swapchars(char* string) 
+{
+    int Length;
+    int position;
+    char c;
+
+    Length=strlen(string);
+    for (position=0; position<Length-1; position+=2)
+    {
+        c=string[position];
+        string[position]=string[position+1];
+        string[position+1]=c;
     }
 }
 
@@ -489,6 +511,99 @@ int pdu2binary(const char* pdu, char* binary, int *data_length,
     return octets -skip_octets;
 }
 
+// Converts an ascii text to a pdu string 
+// text might contain zero values because this is a valid character code in sms
+// character set. Therefore we need the length parameter.
+// If udh is not 0, then insert it to the beginning of the message.
+// The string must be in hex-dump format: "05 00 03 AF 02 01". 
+// The first byte is the size of the UDH.
+int text2pdu(char* text, int length, char* pdu, char* udh)
+{
+    char tmp[500];
+    char octett[10];
+    int pdubitposition;
+    int pdubyteposition=0;
+    int character;
+    int bit;
+    int pdubitnr;
+    int counted_characters=0;
+    int udh_size_octets;   // size of the udh in octets, should equal to the first byte + 1
+    int udh_size_septets;  // size of udh in septets (7bit text characters)
+    int fillbits;          // number of filler bits between udh and ud.
+    int counter;
+
+    pdu[0]=0;
+    // Check the udh
+    if (udh)
+    {
+        udh_size_octets=(strlen(udh)+2)/3;
+        udh_size_septets=((udh_size_octets)*8+6)/7;
+        fillbits=7-(udh_size_octets % 7);
+        if (fillbits==7)
+            fillbits=0;
+
+        // copy udh to pdu, skipping the space characters
+        for (counter=0; counter<udh_size_octets; counter++)
+        {
+            pdu[counter*2]=udh[counter*3];
+            pdu[counter*2+1]=udh[counter*3+1];
+        }
+        pdu[counter*2]=0;
+    } 
+    else
+    {
+        udh_size_octets=0;
+        udh_size_septets=0; 
+        fillbits=0;
+    }
+    
+    // limit size of the message to maximum allowed size
+    if (length>maxsms_pdu-udh_size_septets)
+        length=maxsms_pdu-udh_size_septets;
+    //clear the tmp buffer
+    for (character=0;(size_t)character<sizeof(tmp);character++)
+        tmp[character]=0;
+    // Convert 8bit text stream to 7bit stream
+    for (character=0;character<length;character++)
+    {
+        counted_characters++;
+        for (bit=0;bit<7;bit++)
+        {
+            pdubitnr=7*character+bit+fillbits;
+            pdubyteposition=pdubitnr/8;
+            pdubitposition=pdubitnr%8;
+            if (text[character] & (1<<bit))
+                tmp[pdubyteposition]=tmp[pdubyteposition] | (1<<pdubitposition);
+            else
+                tmp[pdubyteposition]=tmp[pdubyteposition] & ~(1<<pdubitposition);
+        }
+    }
+    tmp[pdubyteposition+1]=0;
+    // convert 7bit stream to hex-dump
+    for (character=0;character<=pdubyteposition; character++)
+    {
+        sprintf(octett,"%02X",(unsigned char) tmp[character]);
+        strcat(pdu,octett);
+    }
+    return counted_characters+udh_size_septets;
+}
+
+/* Converts binary to PDU string, this is basically a hex dump. */
+void binary2pdu(char* binary, int length, char* pdu)
+{
+    int character;
+    char octett[10];
+
+    if (length>maxsms_binary)
+        length=maxsms_binary;
+    pdu[0]=0;
+    for (character=0;character<length; character++)
+    {
+        sprintf(octett,"%02X",(unsigned char) binary[character]);
+        strcat(pdu,octett);
+    }
+}
+
 // PDU methods
 PDU::PDU(const string& pdu)
     : m_pdu(pdu)
@@ -598,6 +713,7 @@ bool PDU::split()
     m_udh_type = "";
     m_udh_data = "";
     m_is_statusreport = false;
+    m_report = false;
     
     if (m_pdu.length() < 2)
     {
@@ -630,8 +746,8 @@ bool PDU::split()
     if (tmp & 0x40) // Is UDH bit set?
         m_with_udh = true;
     
-    /*if (tmp & 0x20) // Is status report going to be returned to the SME?
-        report = true;*/
+    if (tmp & 0x20) // Is status report going to be returned to the SME?
+        m_report = true;
     
     int type = tmp & 3;
     if (type == 0) // SMS Deliver
@@ -648,7 +764,10 @@ bool PDU::split()
         m_is_statusreport = true;
     }
     else if (type == 1) // Sent message
-    {}
+    {
+        m_err_msg = "This is a sent message. Can only decode received messages.";
+        return false;
+    }
     else
     {
         m_err_msg = "Unsupported type";
@@ -845,7 +964,7 @@ bool PDU::splitDeliver()
     int errorpos = 0;
     int bin_udh = 1;    // UDH binary format flag
     
-    printf("alpha[%d]\n", m_alphabet);
+    //printf("alpha[%d]\n", m_alphabet);
     if (m_alphabet <= 0)
     {
         if ((result = pdu2text(m_pdu_ptr, message, &message_length, 
@@ -872,7 +991,7 @@ bool PDU::splitDeliver()
             m_err_msg += (m_alphabet == 1) ? "binary" : "UCS2 text";
             return false;
         } 
-        printf("[%s]\n", message);
+        //printf("[%s]\n", message);
     }
     
     m_text = message;
@@ -1147,5 +1266,153 @@ int PDU::explainAddressType(const char *octet_char, int octet_int)
         m_sender_addr_type += p;
     }
     return result;
+}
+
+
+// Make the PDU string from a mesage text and destination phone number.
+// The destination variable pdu has to be big enough. 
+// alphabet indicates the character set of the message.
+// flash_sms enables the flash flag.
+// mode select the pdu version (old or new).
+// if udh is true, then udh_data contains the optional user data header in hex dump, example: "05 00 03 AF 02 01"
+void PDU::makePDU(string mode, int validity, int replace_msg, int system_msg)
+{
+    int coding;
+    int flags;
+    char tmp[size_to];
+    char tmp2[500];
+    int numberformat;
+    int numberlength;
+    char *p;
+    int l;
+    char tmp_smsc[size_smsc];
+    
+    char number[128];
+    sprintf(number, m_address.c_str());
+    
+    char message[1024];
+    sprintf(message, m_text.c_str());
+    
+    int messagelen = m_text.length();
+    
+    char udh_data[512];
+    sprintf(udh_data, m_udh_data.c_str());
+    
+    char pdu[1024];
+    pdu[0] = 0;
+    
+    char smsc[512];
+    sprintf(smsc, m_smsc.c_str());
+
+    if (number[0] == 's')  // Is number starts with s, then send it without number format indicator
+    {
+        numberformat = NF_UNKNOWN;
+        snprintf(tmp, sizeof(tmp), "%s", number +1);
+    }
+    else
+    {
+        numberformat = NF_INTERNATIONAL;
+        snprintf(tmp, sizeof(tmp), "%s", number);
+    }
+
+    //set_numberformat(&numberformat, tmp, number_type);
+
+    numberlength=strlen(tmp);
+    // terminate the number with F if the length is odd
+    if (numberlength%2)
+        strcat(tmp, "F");
+    // Swap every second character
+    swapchars(tmp);
+
+    // 3.1.12:
+    *tmp_smsc = 0;
+    if (m_smsc != "")
+    {
+        p = smsc;
+        while (*p == '+') 
+            p++;
+        snprintf(tmp_smsc, sizeof(tmp_smsc), "%s", p);
+        if (strlen(tmp_smsc) % 2 && strlen(tmp_smsc) < sizeof(tmp_smsc) - 1)
+            strcat(tmp_smsc, "F");
+        swapchars(tmp_smsc);
+    }
+
+    flags=1; // SMS-Sumbit MS to SMSC
+    if (m_with_udh)
+        flags+=64; // User Data Header
+    if (mode != "old")
+        flags+=16; // Validity field
+    if (m_report)
+        flags+=32; // Request Status Report
+
+    if (m_alphabet == 1)
+        coding = 4; // 8bit binary
+    else if (m_alphabet == 2)
+        coding = 8; // 16bit
+    else
+        coding = 0; // 7bit
+    if (m_flash)
+        coding += 0x10; // Bits 1 and 0 have a message class meaning (class 0, alert)
+
+    /* Create the PDU string of the message */
+    if (m_alphabet==1 || m_alphabet==2 || system_msg)
+    {
+        // Unicode message can be concatenated:
+        //if (alphabet == 2 && with_udh)
+        // Binary message can be concatenated too:
+        if (m_with_udh)
+        {
+            strcpy(tmp2, udh_data);
+            while ((p = strchr(tmp2, ' ')))
+                strcpyo(p, p +1);
+            l = strlen(tmp2) /2;
+            binary2pdu(message, messagelen, strchr(tmp2, 0));
+            messagelen += l;
+        }
+        else
+            binary2pdu(message,messagelen,tmp2);
+    }
+    else
+        messagelen=text2pdu(message,messagelen,tmp2,udh_data);
+
+    /* concatenate the first part of the PDU string */
+    if (mode == "old")
+        sprintf(pdu,"%02X00%02X%02X%s00%02X%02X",flags, numberlength, numberformat, tmp, coding, messagelen);
+    else
+    {
+        int proto = 0;
+        if (validity < 0 || validity > 255)
+            validity = validity_period;
+        if (system_msg)
+        {
+            proto = 0x40;
+            coding = 0xF4;  // binary
+
+            // 3.1.7:
+            if (system_msg == 2)
+            {
+                proto += (0x7F - 0x40); // SS (no show)
+                coding += 2;    // store to sim
+            }
+        }
+        else if (replace_msg >= 1 && replace_msg <= 7)
+            proto = 0x40 + replace_msg;
+
+    //sprintf(pdu, "00%02X00%02X%02X%s%02X%02X%02X%02X", flags, numberlength, numberformat, tmp,
+    // (system_msg) ? 0x40 : (replace_msg >= 1 && replace_msg <= 7) ? 0x40 + replace_msg : 0,
+    // (system_msg) ? 0xF4 : coding, validity, messagelen);
+
+    // 3.1.12:
+    //sprintf(pdu, "00%02X00%02X%02X%s%02X%02X%02X%02X", flags, numberlength, numberformat, tmp, proto, coding, validity, messagelen);
+        if (*tmp_smsc)
+            sprintf(pdu, "%02X%s%s", (int)strlen(tmp_smsc) / 2 + 1, (tmp_smsc[1] == '0')? "81": "91", tmp_smsc);
+        else
+            strcpy(pdu, "00");
+        sprintf(strchr(pdu, 0), "%02X00%02X%02X%s%02X%02X%02X%02X", flags, numberlength, numberformat, tmp, proto, coding, validity, messagelen);
+    }
+
+    m_pdu = pdu;
+    /* concatenate the text to the PDU string */
+    strcat(pdu,tmp2);
 }
 
