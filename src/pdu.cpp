@@ -334,7 +334,105 @@ int pdu2text0(char *pdu, char *text)
     return pdu2text(pdu, text, 0, 0, 0, 0, 0, 0);
 }
 
+// Converts a PDU string to binary. Return -1 if there is a PDU error, -2 if PDU is too short.
+// Version > 3.0.9, > 3.1beta6 handles also udh.
+int pdu2binary(const char* pdu, char* binary, int *data_length, 
+               int *expected_length, int with_udh, char *udh, char *udh_type, 
+               int *errorpos)
+{
+    int octets;
+    int octetcounter;
+    int i;
+    int udhsize = 0;
+    int skip_octets = 0;
+    int result;
 
+    *udh = 0;
+    *udh_type = 0;
+
+    if ((octets = octet2bin_check(pdu)) < 0)
+    {
+        *errorpos = -1 * octets -3;
+        return (octets >= -2)? -2: -1;
+    }
+
+    if (with_udh)
+    {
+        // copy the data header to udh and convert to hex dump
+        // There was at least one octet and next will give an error if there is no more data:
+        if ((udhsize = octet2bin_check(pdu +2)) < 0)
+        {
+            *errorpos = -1 * udhsize -3 +2;
+            return (udhsize >= -2)? -2: -1;
+        }
+
+        i = 0;
+        result = -1;
+        for (octetcounter = 0; octetcounter < udhsize +1; octetcounter++)
+        {
+            if (octetcounter *3 +3 >= size_udh_data)
+            {
+                i = octetcounter *2 +2;
+                result = -2;
+                break;
+            }
+            udh[octetcounter *3] = pdu[(octetcounter << 1) +2];
+            if (!isxdigit(udh[octetcounter *3]))
+            {
+                i = octetcounter *2 +2;
+                if (!udh[octetcounter *3])
+                    result = -2;
+                break;
+            }
+            udh[octetcounter *3 +1] = pdu[(octetcounter << 1) +3];
+            if (!isxdigit(udh[octetcounter *3 +1]))
+            {
+                i = octetcounter *2 +3;
+                if (!udh[octetcounter *3 +1])
+                    result = -2;
+                break;
+            }
+            udh[octetcounter *3 +2] = ' '; 
+            udh[octetcounter *3 +3] = 0; 
+        }
+
+        if (i)
+        {
+            *errorpos = i;
+            return result;
+        }
+
+        if (udh_type)
+            if (explain_udh(udh_type, pdu + 2) < 0)
+                if (strlen(udh_type) + 7 < (size_t)size_udh_type)
+                    sprintf(strchr(udh_type, 0), "%sERROR", (*udh_type)? ", " : "");
+
+        skip_octets = udhsize + 1;
+    }
+
+    *expected_length = octets -skip_octets;
+
+    for (octetcounter = 0; octetcounter < octets - skip_octets; octetcounter++)
+    {
+        if ((i = octet2bin_check(pdu +(octetcounter << 1) +2 +(skip_octets *2))) < 0)
+        {
+            *errorpos = octetcounter *2 +2 +(skip_octets *2);
+            if (i == -2 || i == -4)
+                (*errorpos)++;
+            *data_length = octetcounter;
+            return (i >= -2)? -2: -1;
+        }
+        else
+            binary[octetcounter] = i;
+    }
+
+    if (octets -skip_octets >= 0)
+        binary[octets -skip_octets] = 0;
+    *data_length = octets -skip_octets;
+    return octets -skip_octets;
+}
+
+// PDU methods
 PDU::PDU(const string& pdu)
     : m_pdu(pdu)
 {}
@@ -674,15 +772,19 @@ bool PDU::splitDeliver()
     
     m_pdu_ptr += 2;
     
+    // TODO: clean it
+    int result = 0;
+    char message[maxtext]; message[0] = 0;
+    int message_length;
+    int expected_length;
+    char udh_data[size_udh_data]; udh_data[0] = 0;
+    char udh_type[size_udh_type]; udh_type[0] = 0;
+    int errorpos = 0;
+    int bin_udh = 1;    // UDH binary format flag
+    
+    printf("alpha[%d]\n", m_alphabet);
     if (m_alphabet <= 0)
     {
-        int result = 0;
-        char message[maxtext];
-        int message_length;
-        int expected_length;
-        char udh_data[size_udh_data]; udh_data[0] = 0;
-        char udh_type[size_udh_type]; udh_type[0] = 0;
-        int errorpos = 0;
         if ((result = pdu2text(m_pdu_ptr, message, &message_length, 
                                &expected_length, (int)m_with_udh, udh_data, 
                                udh_type, &errorpos)) < 0)
@@ -690,10 +792,29 @@ bool PDU::splitDeliver()
             m_err_msg = "Error while reading TP-UD (GSM text)";
             return false;
         }
-        m_text = message;
-        m_udh_type = udh_type;
-        m_udh_data = udh_data;
     }
+    else
+    {
+        // With binary messages udh is NOT taken from the PDU.
+        int i = (int)m_with_udh;
+        // 3.1.5: it should work now:
+        if (bin_udh == 0)
+            if (m_alphabet == 1)
+                i = 0;
+        if ((result = pdu2binary(m_pdu_ptr, message, &message_length, 
+                                 &expected_length, i, udh_data, udh_type, 
+                                 &errorpos)) < 0)
+        {
+            m_err_msg = "Error while reading TP-UD ";
+            m_err_msg += (m_alphabet == 1) ? "binary" : "UCS2 text";
+            return false;
+        } 
+        printf("[%s]\n", message);
+    }
+    
+    m_text = message;
+    m_udh_type = udh_type;
+    m_udh_data = udh_data;
     
     return true;
 }
