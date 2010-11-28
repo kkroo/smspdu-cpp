@@ -191,6 +191,63 @@ int explain_udh(char *udh_type, const char *pdu)
     return udh_length;
 }
 
+// 3.1.14:
+void explain_status(char *dest, size_t size_dest, int status)
+{
+    const char *p = "unknown";
+    
+    switch (status)
+    {
+    case 0: p = "Ok,short message received by the SME"; break;
+    case 1: p = "Ok,short message forwarded by the SC to the SME but the SC is unable to confirm delivery"; break;
+    case 2: p = "Ok,short message replaced by the SC"; break;
+
+    // Temporary error, SC still trying to transfer SM
+    case 32: p = "Still trying,congestion"; break;
+    case 33: p = "Still trying,SME busy"; break;
+    case 34: p = "Still trying,no response sendr SME"; break;
+    case 35: p = "Still trying,service rejected"; break;
+    case 36: p = "Still trying,quality of service not available"; break;
+    case 37: p = "Still trying,error in SME"; break;
+    // 38...47: Reserved
+    // 48...63: Values specific to each SC
+
+    // Permanent error, SC is not making any more transfer attempts
+    case 64: p = "Error,remote procedure error"; break;
+    case 65: p = "Error,incompatible destination"; break;
+    case 66: p = "Error,connection rejected by SME"; break;
+    case 67: p = "Error,not obtainable"; break;
+    case 68: p = "Error,quality of service not available"; break;
+    case 69: p = "Error,no interworking available"; break;
+    case 70: p = "Error,SM validity period expired"; break;
+    case 71: p = "Error,SM deleted by originating SME"; break;
+    case 72: p = "Error,SM deleted by SC administration"; break;
+    case 73: p = "Error,SM does not exist"; break;
+    // 74...79: Reserved
+    // 80...95: Values specific to each SC
+
+    // Permanent error, SC is not making any more transfer attempts
+    case 96: p = "Error,congestion"; break;
+    case 97: p = "Error,SME busy"; break;
+    case 98: p = "Error,no response sendr SME"; break;
+    case 99: p = "Error,service rejected"; break;
+    case 100: p = "Error,quality of service not available"; break;
+    case 101: p = "Error,error in SME"; break;
+    // 102...105: Reserved
+    // 106...111: Reserved
+    // 112...127: Values specific to each SC
+    // 128...255: Reserved
+
+    default:
+        if (status >= 48 && status <= 63)
+            p = "Temporary error, SC specific, unknown";
+        else if ((status >= 80 && status <= 95) || (status >= 112 && status <= 127))
+            p = "Permanent error, SC specific, unknown";
+    }
+
+    snprintf(dest, size_dest, "%s", p);
+}
+
 int pdu2text(const char *pdu, char *text, int *text_length, int *expected_length,
              int with_udh, char *udh, char *udh_type, int *errorpos) 
 {
@@ -945,107 +1002,109 @@ bool PDU::splitStatusReport()
         m_err_msg = "While trying to read SMSC Timestamp: PDU is too short";
         return false;
     }
- /*           else
-            {
-              // get SMSC timestamp
-              sprintf(date,"%c%c-%c%c-%c%c",Src_Pointer[1],Src_Pointer[0],Src_Pointer[3],Src_Pointer[2],Src_Pointer[5],Src_Pointer[4]);
-              if (!isdigitc(date[0]) || !isdigitc(date[1]) || !isdigitc(date[3]) || !isdigitc(date[4]) || !isdigitc(date[6]) || !isdigitc(date[7]))
-              {
-                pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid character(s) in date of SMSC Timestamp: \"%s\"", date);
-                *date = 0;
-              }
-              else if (atoi(date +3) > 12 || atoi(date +6) > 31)
-              {
-                // Not a fatal error (?)
-                //pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid value(s) in date of SMSC Timestamp: \"%s\"", date);
-                // *date = 0;
-                add_warning(warning_headers, "Invalid value(s) in date of SMSC Timestamp.");
-              }
-
-              Src_Pointer += 6;
-              sprintf(time,"%c%c:%c%c:%c%c",Src_Pointer[1],Src_Pointer[0],Src_Pointer[3],Src_Pointer[2],Src_Pointer[5],Src_Pointer[4]);
-              if (!isdigitc(time[0]) || !isdigitc(time[1]) || !isdigitc(time[3]) || !isdigitc(time[4]) || !isdigitc(time[6]) || !isdigitc(time[7]))
-              {
-                pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid character(s) in time of SMSC Timestamp: \"%s\"", time);
-                *time = 0;
-              }
-              else if (atoi(time) > 23 || atoi(time +3) > 59 || atoi(time +6) > 59)
-              {
-                // Not a fatal error (?)
-                //pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid value(s) in time of SMSC Timestamp: \"%s\"", time);
-                // *time = 0;
-                add_warning(warning_headers, "Invalid value(s) in time of SMSC Timestamp.");
-              }
-
-              if (!(*err_str))
-              {
-                Src_Pointer += 6;
-                // Time zone is not used but bytes are checked:
-                if (octet2bin_check(Src_Pointer) < 0)
-                  pdu_error(err_str, 0, Src_Pointer -full_pdu, 2,
-                            "Invalid character(s) in Time Zone of SMSC Time Stamp: \"%.2s\"", Src_Pointer);
-                else
-                  Src_Pointer += 2;
-              }
-            }
-          }
-
-          if (!(*err_str))
-          {
-            if (strlen(Src_Pointer) < 14)
-              pdu_error(err_str, 0, Src_Pointer -full_pdu, 14, "While trying to read Discharge Timestamp: %s", err_too_short);
-            else
-            {
-              // get Discharge timestamp
-              sprintf(temp,"%c%c-%c%c-%c%c %c%c:%c%c:%c%c",Src_Pointer[1],Src_Pointer[0],Src_Pointer[3],Src_Pointer[2],Src_Pointer[5],Src_Pointer[4],Src_Pointer[7],Src_Pointer[6],Src_Pointer[9],Src_Pointer[8],Src_Pointer[11],Src_Pointer[10]);
-              if (!isdigitc(temp[0]) || !isdigitc(temp[1]) || !isdigitc(temp[3]) || !isdigitc(temp[4]) || !isdigitc(temp[6]) || !isdigitc(temp[7]) || 
-                  !isdigitc(temp[9]) || !isdigitc(temp[10]) || !isdigitc(temp[12]) || !isdigitc(temp[13]) || !isdigitc(temp[15]) || !isdigitc(temp[16]))
-                pdu_error(err_str, 0, Src_Pointer -full_pdu, 12, "Invalid character(s) in Discharge Timestamp: \"%s\"", temp);
-              else if (atoi(temp +3) > 12 || atoi(temp +6) > 31 || atoi(temp +9) > 24 || atoi(temp +12) > 59 || atoi(temp +16) > 59)
-              {
-                // Not a fatal error (?)
-                //pdu_error(err_str, 0, Src_Pointer -full_pdu, 12, "Invalid value(s) in Discharge Timestamp: \"%s\"", temp);
-                add_warning(warning_headers, "Invalid values(s) in Discharge Timestamp.");
-              }
-
-              if (!(*err_str))
-              {
-                Src_Pointer += 12;
-                // Time zone is not used but bytes are checked:
-                if (octet2bin_check(Src_Pointer) < 0)
-                  pdu_error(err_str, 0, Src_Pointer -full_pdu, 2,
-                            "Invalid character(s) in Time Zone of Discharge Time Stamp: \"%.2s\"", Src_Pointer);
-                else
-                  Src_Pointer += 2;
-              }
-            }
-
-            if (!(*err_str))
-            {
-              sprintf(strchr(result, 0), "Discharge_timestamp: %s", temp);
-              if (strlen(Src_Pointer) < 2)
-                pdu_error(err_str, 0, Src_Pointer -full_pdu, 2, "While trying to read Status octet: %s", err_too_short);
-              else
-              {
-                // get Status
-                if ((status = octet2bin_check(Src_Pointer)) < 0)
-                  pdu_error(err_str, 0, Src_Pointer -full_pdu, 2, "Invalid Status octet: \"%.2s\"", Src_Pointer);
-                else
-                {
-                  char buffer[128];
-
-                  explain_status(buffer, sizeof(buffer), status);
-                  sprintf(strchr(result, 0), "\n%s %i,%s", SR_Status, status, buffer);
-                }
-              }
-            }
-          }
-        }
-      }
+    
+    // get SMSC timestamp
+    char str_buf[100];
+    sprintf(str_buf, "%c%c-%c%c-%c%c", m_pdu_ptr[1], m_pdu_ptr[0], m_pdu_ptr[3],
+            m_pdu_ptr[2], m_pdu_ptr[5], m_pdu_ptr[4]);
+    if (!isdigit(str_buf[0]) || !isdigit(str_buf[1]) || !isdigit(str_buf[3]) 
+        || !isdigit(str_buf[4]) || !isdigit(str_buf[6]) || !isdigit(str_buf[7]))
+    {
+        m_err_msg = "Invalid character(s) in date of SMSC Timestamp";
+        return false;
     }
-  }
+    if (atoi(str_buf + 3) > 12 || atoi(str_buf + 6) > 31)
+    {
+        // Not a fatal error (?)
+        //pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid value(s) in date of SMSC Timestamp: \"%s\"", date);
+        // *date = 0;
+        cout << "Invalid value(s) in date of SMSC Timestamp" << endl;
+    }
+    m_date = str_buf;
+    
+    // Time
+    m_pdu_ptr += 6;
+    sprintf(str_buf, "%c%c:%c%c:%c%c", m_pdu_ptr[1], m_pdu_ptr[0], m_pdu_ptr[3],
+            m_pdu_ptr[2], m_pdu_ptr[5], m_pdu_ptr[4]);
+    if (!isdigit(str_buf[0]) || !isdigit(str_buf[1]) || !isdigit(str_buf[3]) 
+        || !isdigit(str_buf[4]) || !isdigit(str_buf[6]) || !isdigit(str_buf[7]))
+    {
+        m_err_msg = "Invalid character(s) in time of SMSC Timestamp";
+        return false;
+    }
+    if (atoi(str_buf) > 23 || atoi(str_buf + 3) > 59 || atoi(str_buf + 6) > 59)
+    {
+        // Not a fatal error (?)
+        //pdu_error(err_str, 0, Src_Pointer -full_pdu, 6, "Invalid value(s) in time of SMSC Timestamp: \"%s\"", time);
+        // *time = 0;
+        cout << "Invalid value(s) in time of SMSC Timestamp." << endl;
+    }
+    
+    m_pdu_ptr += 6;
+    // Time zone is not used but bytes are checked:
+    if (octet2bin_check(m_pdu_ptr) < 0)
+    {
+        m_err_msg = "Invalid character(s) in Time Zone of SMSC Time Stamp";
+        return false;
+    }
+    m_pdu_ptr += 2;
+    
+    if (strlen(m_pdu_ptr) < 14)
+    {
+        m_err_msg = "Reading Discharge Timestamp: PDU is too short";
+        return false;
+    }
+    
+    // Get Discharge timestamp
+    sprintf(str_buf, "%c%c-%c%c-%c%c %c%c:%c%c:%c%c", m_pdu_ptr[1], 
+            m_pdu_ptr[0], m_pdu_ptr[3], m_pdu_ptr[2], m_pdu_ptr[5], 
+            m_pdu_ptr[4], m_pdu_ptr[7], m_pdu_ptr[6], m_pdu_ptr[9],
+            m_pdu_ptr[8], m_pdu_ptr[11], m_pdu_ptr[10]);
+    if (!isdigit(str_buf[0]) || !isdigit(str_buf[1]) || !isdigit(str_buf[3]) 
+        || !isdigit(str_buf[4]) || !isdigit(str_buf[6]) || !isdigit(str_buf[7]) 
+        || !isdigit(str_buf[9]) || !isdigit(str_buf[10]) || !isdigit(str_buf[12]) 
+        || !isdigit(str_buf[13]) || !isdigit(str_buf[15]) || !isdigit(str_buf[16]))
+    {
+        m_err_msg = "Invalid character(s) in Discharge Timestamp";
+        return false;
+    }
+    if (atoi(str_buf + 3) > 12 || atoi(str_buf + 6) > 31 || atoi(str_buf + 9) > 24 
+        || atoi(str_buf + 12) > 59 || atoi(str_buf + 16) > 59)
+    {
+        // Not a fatal error (?)
+        //pdu_error(err_str, 0, Src_Pointer -full_pdu, 12, "Invalid value(s) in Discharge Timestamp: \"%s\"", temp);
+        cout << "Invalid values(s) in Discharge Timestamp." << endl;
+    }
+    
+    m_pdu_ptr += 12;
+    // Time zone is not used but bytes are checked:
+    if (octet2bin_check(m_pdu_ptr) < 0)
+    {
+        m_err_msg = "Invalid character(s) in Time Zone of Discharge Time Stamp";
+        return false;
+    }
+    m_pdu_ptr += 2;
+    
+    sprintf(strchr(result, 0), "Discharge_timestamp: %s", str_buf);
+    
+    if (strlen(m_pdu_ptr) < 2)
+    {
+        m_err_msg = "Reading Status octet: PDU is too short";
+        return false;
+    }
+    // Get Status
+    int status = 0;
+    if ((status = octet2bin_check(m_pdu_ptr)) < 0)
+    {
+        m_err_msg = "Invalid Status octet";
+        return false;
+    }
+    
+    explain_status(str_buf, sizeof(str_buf), status);
+    sprintf(strchr(result, 0), "\n%s %i,%s", status_label, status, str_buf);
+    
+    m_text = result;
 
-  return strlen(result);*/
     return true;
 }
 
