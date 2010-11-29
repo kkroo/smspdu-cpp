@@ -1411,8 +1411,10 @@ void PDU::makePDU(string mode, int validity, int replace_msg, int system_msg)
         sprintf(strchr(pdu, 0), "%02X00%02X%02X%s%02X%02X%02X%02X", flags, numberlength, numberformat, tmp, proto, coding, validity, messagelen);
     }
 
-    m_pdu = pdu;
+    
+    printf("tmp2 = [%s]\n", tmp2);
     /* concatenate the text to the PDU string */
     strcat(pdu,tmp2);
+    m_pdu = pdu;
 }
 
