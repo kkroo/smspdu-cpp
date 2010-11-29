@@ -26,6 +26,7 @@ size_t convert(const char *to_enc, const char *from_enc, char *in_str,
 	}
 
 	bytes_converted = iconv(cd, &in_str, &bytes_in, &out_str, &bytes_out);
+	
 	if(bytes_converted < 0)
 		printf("iconv(...) failed. Errno %d\n", errno);
 
@@ -33,9 +34,9 @@ size_t convert(const char *to_enc, const char *from_enc, char *in_str,
 		printf("iconv_close(...) failed. Errno %d\n", errno);
 	
 	if(bytes_converted >= 0 && bytes_out > 0)
-		out_str[bytes_converted] = '\0';
+		out_str[out_len - bytes_out] = '\0';
 
-	return bytes_converted;
+	return out_len - bytes_out;
 }
 
 int main()
@@ -88,9 +89,9 @@ int main()
     cout << "PDU UDH Type: " << pdu.getUDHType() << endl;
     cout << "PDU UDH Data: " << pdu.getUDHData() << endl;
     
+    char in_str[512], out_str[512];
     if (pdu.getAlphabet() == 2)
     {
-        char in_str[512], out_str[512];
         strcpy(in_str, pdu.getText().c_str());
         if (convert("utf8", "UTF16BE", in_str, out_str, 512) >= 0)
             cout << "PDU Message: " << out_str << endl;
@@ -116,6 +117,26 @@ int main()
     cout << "PDU Message: " << pdu2.getText() << endl;
     cout << "Generated PDU: [" << pdu2.getPDU() << "]"<< endl;
     cout << "Correct PDU:   [079183900144601011000C918390113254760000AA0DC8329BFD6681EE6F399B1C02]" << endl;
+    
+    //AT+CMGW=38\n079183900144601011000C918390113254760008AA18041F04400438043204350442002C0020043C043804400021
+    
+    PDU pdu3;
+    pdu3.setAddress("380911234567");
+    strcpy(in_str, "Привет, мир!");
+    //cout << "[" << out_str << "]" << endl;
+    convert("UTF16BE", "utf8", in_str, out_str, 512);
+    //cout << "[" << out_str << "]" << endl;
+    pdu3.setText(out_str);
+    pdu3.setSMSC("+380910440601");
+    pdu3.setAlphabet(2);
+    
+    cout << endl << "Writing UCS2:" << endl;
+    pdu3.makePDU("new", 32, 0, 0);
+    cout << "PDU SMSC: " << pdu3.getSMSC() << endl;
+    cout << "PDU Address: " << pdu3.getAddress() << endl;
+    cout << "PDU Message: " << pdu3.getText() << endl;
+    cout << "Generated PDU: [" << pdu3.getPDU() << "]"<< endl;
+    cout << "Correct PDU:   [079183900144601011000C918390113254760008AA18041F04400438043204350442002C0020043C043804400021]" << endl;
 
     return 0;
 }
