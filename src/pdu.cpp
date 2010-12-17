@@ -703,7 +703,7 @@ bool PDU::parse()
     
     // Unused bits 3 and 4 should be zero, failure with this produces a warning:
     if (tmp & 0x18)
-        printf("Warning: Unused bits 3 and 4 are used in the first octet of the SMS-DELIVER PDU.\n");
+        sprintf(m_err, "Warning: Unused bits 3 and 4 are used in the first octet of the SMS-DELIVER PDU.\n");
     
     if (tmp & 0x40) // Is UDH bit set?
         m_with_udh = true;
@@ -926,7 +926,7 @@ bool PDU::parseDeliver()
             if (padding)
             {
                 if (m_number[end] != 'F')
-                    printf("Length of numeric sender address is odd, but not terminated with 'F'.\n");
+                    sprintf(m_err, "Length of numeric sender address is odd, but not terminated with 'F'.\n");
                 else
                     m_number[end] = '\0';
             }
@@ -934,7 +934,7 @@ bool PDU::parseDeliver()
             {
                 if (m_number[end] == 'F')
                 {
-                    printf("Length of numeric sender address is even, but still was terminated with 'F'.\n");
+                    sprintf(m_err, "Length of numeric sender address is even, but still was terminated with 'F'.\n");
                     m_number[end] = '\0';
                 }
             }
@@ -943,7 +943,7 @@ bool PDU::parseDeliver()
             {
                 if (!isdigit(m_number[i]))
                 {
-                    printf("Invalid character(s) in sender address.\n");
+                    sprintf(m_err, "Invalid character(s) in sender address.\n");
                     break;
                 }
             }
@@ -1007,7 +1007,7 @@ bool PDU::parseDeliver()
     }
     else if (atoi(str_buf + 3) > 12 || atoi(str_buf + 6) > 31)
     {
-        printf("Invalid values(s) in date of Service Centre Time Stamp.\n");
+        sprintf(m_err, "Invalid values(s) in date of Service Centre Time Stamp.\n");
     }
     sprintf(m_date, str_buf);
     
@@ -1023,7 +1023,7 @@ bool PDU::parseDeliver()
     }
     else if (atoi(str_buf) > 23 || atoi(str_buf + 3) > 59 || atoi(str_buf + 6) > 59)
     {
-        printf("Invalid values(s) in time of Service Centre Time Stamp.\n");
+        sprintf(m_err, "Invalid values(s) in time of Service Centre Time Stamp.\n");
     }
     sprintf(m_time, str_buf);
     
@@ -1047,7 +1047,6 @@ bool PDU::parseDeliver()
     int errorpos = 0;
     int bin_udh = 1;    // UDH binary format flag
     
-    //printf("alpha[%d]\n", m_alphabet);
     if (m_alphabet <= 0)
     {
         if ((result = pdu2text(m_pdu_ptr, message, &message_length, 
@@ -1174,6 +1173,7 @@ void PDU::generate()
     else
         m_message_len = text2pdu(m_message, m_message_len, tmp2, m_udh_data);
 
+    int smsc_len = 0;
     /* concatenate the first part of the PDU string */
     if (strcmp(m_mode, "old") == 0)
         sprintf(m_pdu, "%02X00%02X%02X%s00%02X%02X", flags, numberlength, 
@@ -1205,12 +1205,17 @@ void PDU::generate()
                     (tmp_smsc[1] == '0') ? "81": "91", tmp_smsc);
         else
             strcpy(m_pdu, "00");
+        
+        smsc_len = strlen(m_pdu);
+        
         sprintf(strchr(m_pdu, 0), "%02X00%02X%02X%s%02X%02X%02X%02X", flags, 
                 numberlength, numberformat, tmp, proto, coding, m_validity, 
                 m_message_len);
+        
     }
     /* concatenate the text to the PDU string */
     strcat(m_pdu,tmp2);
+    m_message_len = (strlen(m_pdu) - smsc_len)/2;
 }
 
 // Setters

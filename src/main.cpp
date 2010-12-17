@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "pdu.h"
 
 using namespace std;
@@ -33,8 +34,8 @@ int main()
     pdu2.setAlphabet(PDU::UCS2);
     
     pdu2.generate();
-    
     printf("PDU: %s\n", pdu2.getPDU());
+    printf("PDU Length: %d\n", pdu2.getMessageLen());
 
     return 0;
 }
