@@ -1,3 +1,16 @@
+/* 
+Copyright (C) 2010- Alexander Chudnovets <effractor@gmail.com>
+
+Based on SMS Server Tools 3
+Copyright (C) 2006- Keijo Kasvi
+http://smstools3.kekekasvi.com/
+
+This program is free software unless you got it under another license directly
+from the author. You can redistribute it and/or modify it under the terms of
+the GNU General Public License as published by the Free Software Foundation.
+Either version 2 of the License, or (at your option) any later version.
+*/
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -86,7 +99,7 @@ int explain_udh(char *udh_type, const char *pdu)
     int idx;
     char *pdu_ptr;
     char *p;
-    const char *p1;
+    const char *p1 = NULL;
     int i;
     char tmp[512];
     char buffer[1024];
@@ -650,7 +663,8 @@ int PDU::convert(const char *tocode, const char *fromcode)
     
     iconv(cd, &msg, &inbytesleft, &out, &outbytesleft);
     
-    free(m_message);
+    if (m_message)
+        free(m_message);
     m_message = tmp;
         
     iconv_close(cd);
