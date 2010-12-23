@@ -1,4 +1,6 @@
 /* 
+Copyright (C) 2010- Alexander Chudnovets <effractor@gmail.com>
+
 Based on SMS Server Tools 3
 Copyright (C) 2006- Keijo Kasvi
 http://smstools3.kekekasvi.com/
