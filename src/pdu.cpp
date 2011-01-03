@@ -23,13 +23,13 @@ Either version 2 of the License, or (at your option) any later version.
 const int max_number = 64;
 const int max_number_type = 1024;
 const int max_smsc = 64;
-const int max_message = 128;
 const int max_date = 32;
 const int max_time = 32;
 const int max_udh_data = 512;
 const int max_udh_type = 512;
 const int max_err = 1024;
 const int maxsms_binary = 140;
+const int max_message = maxsms_binary * 4;
 const int validity_period = 255;
 const int max_pdu = 160;
 
@@ -578,6 +578,7 @@ PDU::~PDU()
     
     if (m_message)
         free(m_message);
+    m_message = 0;
     
     if (m_date)
         free(m_date);
@@ -654,7 +655,7 @@ int PDU::convert(const char *tocode, const char *fromcode)
     if (cd == (iconv_t)(-1) || !m_message)
         return -1;
         
-    size_t inbytesleft = m_message_len, outbytesleft = maxsms_binary;
+    size_t inbytesleft = m_message_len, outbytesleft = maxsms_binary * 2;
     
     char *tmp = (char*)malloc(outbytesleft);
     char *msg = m_message;
@@ -666,7 +667,7 @@ int PDU::convert(const char *tocode, const char *fromcode)
     if (m_message)
         free(m_message);
     m_message = tmp;
-        
+    
     iconv_close(cd);
     
     m_message_len = maxsms_binary - outbytesleft;
