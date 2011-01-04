@@ -1,6 +1,6 @@
 #summary Wiki index
 
-  * Welcome
+  * [http://code.google.com/p/smspdu-cpp/wiki/Welcome Welcome]
   * Featuers
     * Flash SMS
     * Status reports
