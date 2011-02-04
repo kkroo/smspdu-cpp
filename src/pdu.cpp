@@ -34,19 +34,6 @@ const int validity_period = 255;
 const int max_pdu = 160;
 
 // Utility functions
-// TODO: remove it!
-char *strcpyo(char *dest, const char *src)
-{
-    size_t i;
-
-    for (i = 0; src[i] != '\0'; i++)
-        dest[i] = src[i];
-
-    dest[i] = '\0';
-
-    return dest;
-}
-
 // Converts an octet to a 8-Bit value
 int octet2bin(const char* octet) 
 {
@@ -109,7 +96,8 @@ int explain_udh(char *udh_type, const char *pdu)
         return -1;
     strcpy(buffer, pdu);
     while ((p = strchr(buffer, ' ')))
-        strcpyo(p, p +1);
+    	memmove(p, p + 1, strlen(p + 1) + 1);
+        //strcpyo(p, p +1);
     
     if ((udh_length = octet2bin_check(buffer)) < 0)
         return -1;
@@ -741,7 +729,7 @@ bool PDU::parse()
     // Patch for Wavecom SR memory reading:
     if (strncmp(m_pdu, "000000FF00", 10) == 0)
     {
-        m_pdu[8] = '\0';
+        memmove(m_pdu, m_pdu + 8, strlen(m_pdu + 8) + 1); //Thanks to Keijo Kasvi :)
         while (strlen(m_pdu) < 52)
             strcat(m_pdu, "00");
     }
@@ -1423,7 +1411,8 @@ void PDU::generate()
         {
             strcpy(tmp2, m_udh_data);
             while ((p = strchr(tmp2, ' ')))
-                strcpyo(p, p + 1);
+            	memmove(p, p + 1, strlen(p + 1) + 1);
+                //strcpyo(p, p + 1);
             l = strlen(tmp2) / 2;
             binary2pdu(m_message, m_message_len, strchr(tmp2, 0));
             m_message_len += l;
